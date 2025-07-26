@@ -15,28 +15,33 @@
 #include <utility>
 #include <memory>
 
-#include "uconv.hpp"
+/*
+    是否启用 unordered_map
+    还是默认使用 map
+    理论上在小规模数据量下，map 速度更快，而 unordered_map 在大规模数据量下更快
+    但是实际测试基本都是 map 更快
+*/
+#define CC_JSON_ENABLE_UNORDERED_MAP 0
 
-#define CC_JSON_ENABLE_UNORDERED_MAP 0 // 是否启用 unordered_map    还是默认使用 map    在小规模数据量下，map 速度更快
-
-inline double fast_str_to_f64(std::string_view sv)
+inline double str_to_f64(std::string_view sv)
 {
     double value;
     auto result = std::from_chars(sv.data(), sv.data() + sv.size(), value);
     if (result.ec != std::errc() or result.ptr != sv.data() + sv.size())
     {
-        throw std::invalid_argument("fast_str_to_f64: Invalid floating-point string");
+        throw std::invalid_argument("str_to_f64: Invalid floating-point string");
     }
     return value;
 }
 
 inline std::string f64_to_str(double f64)
 {
-    std::array<char, 32> buffer; // 足以容纳大多数 double
+    std::string buffer;
+    buffer.resize(32); // 足以容纳大多数 double
     auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), f64);
     if (result.ec == std::errc())
     {
-        return std::string(buffer.data(), result.ptr);
+        return buffer;
     }
     // 备用方案，或抛出异常
     std::ostringstream oss;
@@ -332,7 +337,7 @@ public:
             }
         }
 
-        if (all_key_value_pairs && il.size() > 0)
+        if (all_key_value_pairs and il.size() > 0)
         {
             // 创建对象
             obj o;
@@ -530,10 +535,11 @@ public:
     }
 
     // to_string 方法
-    inline std::string to_string(size_t space = 2) const
+    inline std::string to_string(size_t space = 2, bool enable_enter = true) const
     {
         std::string result;
-        print_func(result, data_, 0, space, false);
+        result.reserve(1024); // 预分配 1KB
+        print_func(result, data_, 0, space, false, enable_enter);
         return result;
     }
 
@@ -551,7 +557,7 @@ public:
     }
 
 private:
-    inline static void print_func(std::string &result, const val &data, size_t level, size_t space, bool is_tab)
+    inline static void print_func(std::string &result, const val &data, size_t level, size_t space, bool is_tab, bool enable_enter)
     {
         if (is_tab)
             result.append(level * space, ' ');
@@ -575,13 +581,18 @@ private:
                     result.append("[]");
                     return;
                 }
-                result.append("[\n");
+                result.push_back('[');
+                if (enable_enter) 
+                    result.push_back('\n');
                 for (size_t i = 0; i < arr.size(); ++i) {
-                    print_func(result, arr[i].data_, level + 1, space, true);
+                    print_func(result, arr[i].data_, level + 1, space, true,enable_enter);
                     if (i < arr.size() - 1) {
-                        result.append(",\n");
+                        result.push_back(',');
+                        if (enable_enter) 
+                            result.push_back('\n');
                     } else {
-                        result.push_back('\n');
+                        if (enable_enter) 
+                            result.push_back('\n');
                     }
                 }
                 if (space > 0) result.append(level * space, ' ');
@@ -592,19 +603,24 @@ private:
                     result.append("{}");
                     return;
                 }
-                result.append("{\n");
+                result.push_back('{');
+                if (enable_enter) 
+                    result.push_back('\n');
                 auto it = obj.begin();
                 while (it != obj.end()) {
                     if (space > 0) result.append((level + 1) * space, ' ');
                     result.push_back('"');
                     result.append(it->first);
                     result.append("\" : ");
-                    print_func(result, it->second.data_, level + 1, space, false);
+                    print_func(result, it->second.data_, level + 1, space, false,enable_enter);
                     
                     if (++it != obj.end()) {
-                        result.append(",\n");
+                        result.push_back(',');
+                        if (enable_enter) 
+                            result.push_back('\n');
                     } else {
-                        result.push_back('\n');
+                        if (enable_enter) 
+                            result.push_back('\n');
                     }
                 }
                 if (space > 0) result.append(level * space, ' ');
@@ -615,14 +631,14 @@ private:
 private:
     inline static void skip_whitespace(const std::string_view &str, size_t &pos)
     {
-        while (pos < str.length() && (str[pos] == ' ' || str[pos] == '\t' || str[pos] == '\n' || str[pos] == '\r'))
+        while (pos < str.length() and (str[pos] == ' ' or str[pos] == '\t' or str[pos] == '\n' or str[pos] == '\r'))
         {
             ++pos;
         }
     }
     inline static void expect_char(const std::string_view &str, size_t &pos, char expected)
     {
-        if (pos >= str.length() || str[pos] != expected)
+        if (pos >= str.length() or str[pos] != expected)
         {
             throw std::invalid_argument("Expected '" + std::string(1, expected) + "' but found '" +
                                         (pos < str.length() ? std::string(1, str[pos]) : "EOF") + "'");
@@ -650,7 +666,7 @@ private:
         {
             return parse_string(data, str, pos);
         }
-        else if (ch == 't' || ch == 'f')
+        else if (ch == 't' or ch == 'f')
         {
             return parse_boolean(data, str, pos);
         }
@@ -658,7 +674,7 @@ private:
         {
             return parse_null(data, str, pos);
         }
-        else if (ch == '-' || (ch >= '0' && ch <= '9'))
+        else if (ch == '-' or (ch >= '0' and ch <= '9'))
         {
             return parse_number(data, str, pos);
         }
@@ -674,7 +690,7 @@ private:
         skip_whitespace(str_, pos);
 
         obj o;
-        if (pos < str_.length() && str_[pos] == '}')
+        if (pos < str_.length() and str_[pos] == '}')
         {
             ++pos; // 空对象
             data = std::move(o);
@@ -686,7 +702,7 @@ private:
             skip_whitespace(str_, pos);
 
             // 解析键
-            if (pos >= str_.length() || str_[pos] != '"')
+            if (pos >= str_.length() or str_[pos] != '"')
             {
                 throw std::invalid_argument("Expected string key in object");
             }
@@ -738,7 +754,7 @@ private:
         skip_whitespace(str, pos);
 
         arr a;
-        if (pos < str.length() && str[pos] == ']')
+        if (pos < str.length() and str[pos] == ']')
         {
             ++pos; // 空数组
             data = std::move(a);
@@ -785,11 +801,18 @@ private:
         size_t start_pos = pos;
         expect_char(str_, pos, '"');
         std::string result;
+        size_t escape_character_count = 0;
+        size_t escape_character_index = 0;
 
-        while (pos < str_.length() && str_[pos] != '"')
+        while (pos < str_.length() and str_[pos] != '"')
         {
             if (str_[pos] == '\\')
             {
+                if (escape_character_count != 0)
+                {
+                    result.append(str_.data() + escape_character_index, escape_character_count);
+                    escape_character_count = 0;
+                }
                 ++pos;
                 if (pos >= str_.length())
                 {
@@ -799,41 +822,32 @@ private:
                 switch (str_[pos])
                 {
                 case '"':
-                    result.push_back('\\');
-                    result.push_back('"');
+                    result.append("\\\"");
                     break;
                 case '\\':
-                    result.push_back('\\');
-                    result.push_back('\\');
+                    result.append("\\\\");
                     break;
                 case '/':
-                    result.push_back('\\');
-                    result.push_back('/');
+                    result.append("\\/");
                     break;
                 case 'b':
-                    result.push_back('\\');
-                    result.push_back('b');
+                    result.append("\\b");
                     break;
                 case 'f':
-                    result.push_back('\\');
-                    result.push_back('f');
+                    result.append("\\f");
                     break;
                 case 'n':
-                    result.push_back('\\');
-                    result.push_back('n');
+                    result.append("\\n");
                     break;
                 case 'r':
-                    result.push_back('\\');
-                    result.push_back('r');
+                    result.append("\\r");
                     break;
                 case 't':
-                    result.push_back('\\');
-                    result.push_back('t');
+                    result.append("\\t");
                     break;
                 case 'u':
                     // 简单处理Unicode转义：保留原始转义序列
-                    result.push_back('\\');
-                    result.push_back('u');
+                    result.append("\\u");
                     // 检查是否有足够的字符
                     if (pos + 4 < str_.length())
                     {
@@ -854,10 +868,14 @@ private:
             }
             else
             {
-                result.push_back(str_[pos]);
+                if (escape_character_count == 0)
+                    escape_character_index = pos;
+                ++escape_character_count;
             }
             ++pos;
         }
+        if (escape_character_count != 0)
+            result.append(str_.data() + escape_character_index, escape_character_count);
 
         expect_char(str_, pos, '"');
         data = str(std::move(result));
@@ -868,43 +886,43 @@ private:
         size_t start = pos;
 
         // 解析数字（包括负号、整数部分、小数部分、指数部分）
-        if (pos < str.length() && str[pos] == '-')
+        if (pos < str.length() and str[pos] == '-')
         {
             ++pos;
         }
 
         // 整数部分
-        if (pos < str.length() && str[pos] == '0')
+        if (pos < str.length() and str[pos] == '0')
         {
             ++pos;
         }
         else
         {
-            while (pos < str.length() && str[pos] >= '0' && str[pos] <= '9')
+            while (pos < str.length() and str[pos] >= '0' and str[pos] <= '9')
             {
                 ++pos;
             }
         }
 
         // 小数部分
-        if (pos < str.length() && str[pos] == '.')
+        if (pos < str.length() and str[pos] == '.')
         {
             ++pos;
-            while (pos < str.length() && str[pos] >= '0' && str[pos] <= '9')
+            while (pos < str.length() and str[pos] >= '0' and str[pos] <= '9')
             {
                 ++pos;
             }
         }
 
         // 指数部分
-        if (pos < str.length() && (str[pos] == 'e' || str[pos] == 'E'))
+        if (pos < str.length() and (str[pos] == 'e' or str[pos] == 'E'))
         {
             ++pos;
-            if (pos < str.length() && (str[pos] == '+' || str[pos] == '-'))
+            if (pos < str.length() and (str[pos] == '+' or str[pos] == '-'))
             {
                 ++pos;
             }
-            while (pos < str.length() && str[pos] >= '0' && str[pos] <= '9')
+            while (pos < str.length() and str[pos] >= '0' and str[pos] <= '9')
             {
                 ++pos;
             }
@@ -912,20 +930,20 @@ private:
 
         std::string num_str = std::string(str.substr(start, pos - start));
 
-        // 判断是否为整数或浮点数
-        if (num_str.find('.') != std::string::npos ||
-            num_str.find('e') != std::string::npos ||
-            num_str.find('E') != std::string::npos)
+        try
         {
-            // 浮点数
-            data = num(fast_str_to_f64(num_str));
-        }
-        else
-        {
-            // 整数
-            try
+            // 判断是否为整数或浮点数
+            if (num_str.find('.') != std::string::npos ||
+                num_str.find('e') != std::string::npos ||
+                num_str.find('E') != std::string::npos)
             {
-                if (num_str[0] == '-' || (num_str.length() > 1 && num_str[0] == '+' && num_str[1] == '-'))
+                // 浮点数
+                data = num(str_to_f64(num_str));
+            }
+            else
+            {
+                // 整数
+                if (num_str[0] == '-' or (num_str.length() > 1 and num_str[0] == '+' and num_str[1] == '-'))
                 {
                     data = num(std::stoll(num_str));
                 }
@@ -934,13 +952,12 @@ private:
                     data = num(std::stoull(num_str));
                 }
             }
-            catch (...)
-            {
-                // 如果转换失败，当作字符串处理
-                data = num(num_str);
-            }
         }
-
+        catch (...)
+        {
+            // 如果转换失败，当作字符串处理
+            data = num(num_str);
+        }
         return pos - start;
     }
     inline static size_t parse_boolean(val &data, const std::string_view &str, size_t pos)
