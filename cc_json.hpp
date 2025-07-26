@@ -21,32 +21,86 @@
     理论上在小规模数据量下，map 速度更快，而 unordered_map 在大规模数据量下更快
     但是实际测试基本都是 map 更快
 */
-#define CC_JSON_ENABLE_UNORDERED_MAP 0
-
-inline double str_to_f64(std::string_view sv)
+#define CC_JSON_ENABLE_UNORDERED_MAP 0  // 0: map 1: unordered_map
+#define CC_JSON_ENABLE_HIGH_NUM 0       // 是否允许精度下降，如果开启，精度下降会将数字转存储为字符串
+inline size_t int64_to_str(int64_t i64, char *buffer, size_t len)
 {
-    double value;
-    auto result = std::from_chars(sv.data(), sv.data() + sv.size(), value);
-    if (result.ec != std::errc() or result.ptr != sv.data() + sv.size())
-    {
-        throw std::invalid_argument("str_to_f64: Invalid floating-point string");
-    }
-    return value;
+    auto [ptr, ec] = std::to_chars(buffer, buffer + len, i64);
+    if (ec != std::errc())
+        throw std::invalid_argument("int64_to_str: Invalid integer value");
+    return ptr - buffer;
+}
+inline int64_t str_to_int64(const char *str, size_t len)
+{
+    int64_t i64;
+    auto result = std::from_chars(str, str + len, i64);
+    if (result.ec != std::errc())
+        throw std::invalid_argument("str_to_int64: Invalid string value");
+    return i64;
+}
+inline int64_t str_to_int64_high(const char *str, size_t len)
+{
+    int64_t i64;
+    auto result = std::from_chars(str, str + len, i64);
+    if (result.ec != std::errc())
+        throw std::invalid_argument("str_to_int64: Invalid string value");
+    if (result.ptr != str + len)
+        throw std::invalid_argument("str_to_int64: Precision loss detected (extra characters)");
+    return i64;
 }
 
-inline std::string f64_to_str(double f64)
+inline size_t uint64_to_str(uint64_t u64, char *buffer, size_t len)
 {
-    std::string buffer;
-    buffer.resize(32); // 足以容纳大多数 double
-    auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), f64);
-    if (result.ec == std::errc())
-    {
-        return buffer;
-    }
-    // 备用方案，或抛出异常
-    std::ostringstream oss;
-    oss << std::setprecision(std::numeric_limits<double>::max_digits10) << f64;
-    return oss.str();
+    auto [ptr, ec] = std::to_chars(buffer, buffer + len, u64);
+    if (ec != std::errc())
+        throw std::invalid_argument("uint64_to_str: Invalid string value");
+    return ptr - buffer;
+}
+inline uint64_t str_to_uint64(const char *str, size_t len)
+{
+    uint64_t u64;
+    auto [ptr, ec] = std::from_chars(str, str + len, u64);
+    if (ec != std::errc())
+        throw std::invalid_argument("str_to_uint64: Invalid string value");
+    return u64;
+}
+inline uint64_t str_to_uint64_high(const char *str, size_t len)
+{
+    uint64_t u64;
+    auto result = std::from_chars(str, str + len, u64);
+    if (result.ec != std::errc())
+        throw std::invalid_argument("str_to_int64: Invalid string value");
+    if (result.ptr != str + len)
+        throw std::invalid_argument("str_to_int64: Precision loss detected (extra characters)");
+    return u64;
+}
+
+inline size_t f64_to_str(double f64, char *buffer, size_t len)
+{
+    auto [ptr, ec] = std::to_chars(buffer, buffer + len, f64);
+    if (ec != std::errc())
+        throw std::invalid_argument("f64_to_str: Invalid floating-point value");
+    return ptr - buffer;
+}
+inline double str_to_f64(const char *str, size_t len)
+{
+    double f64;
+    auto [ptr, ec] = std::from_chars(str, str + len, f64);
+    if (ec != std::errc())
+        throw std::invalid_argument("str_to_f64: Invalid string value");
+    return f64;
+}
+inline double str_to_f64_high(const char *str, size_t len)
+{
+    double f64 = str_to_f64(str, len);
+    std::array<char, 32> buffer;
+    size_t n_len = uint64_to_str(f64, buffer.data(), buffer.size());
+    if (n_len != len)
+        throw std::invalid_argument("str_to_f64_high: Invalid string value");
+    for (size_t i = 0; i < len; ++i)
+        if (str[i] != buffer[i])
+            throw std::invalid_argument("str_to_f64_high: Precision loss detected (extra characters)");
+    return f64;
 }
 
 // 前向声明
@@ -93,12 +147,23 @@ public:
 
         inline bool get_value() const { return value_; }
 
+        friend class cc_json;
+
     private:
         bool value_;
     };
     struct num
     {
-        inline explicit num() : value_(int64_t(0)) {}
+        enum class num_type
+        {
+            uint_t = 0,
+            int_t,
+            float_t,
+            string_t
+        };
+        inline explicit num() : value_(int64_t(0))
+        {
+        }
         // 无符号整数构造函数
         template <typename T>
             requires std::unsigned_integral<T>
@@ -134,7 +199,7 @@ public:
                                   else if constexpr (std::is_same_v<T, double>)
                                       return static_cast<uint64_t>(arg);
                                   else if constexpr (std::is_same_v<T, std::string>)
-                                      return static_cast<uint64_t>(std::stoull(arg));
+                                        return str_to_uint64(arg.c_str(), arg.size());
                                   else
                                       throw std::invalid_argument("Invalid argument type"); },
                               value_);
@@ -151,7 +216,7 @@ public:
                                   else if constexpr (std::is_same_v<T, double>)
                                       return static_cast<int64_t>(arg);
                                   else if constexpr (std::is_same_v<T, std::string>)
-                                      return static_cast<int64_t>(std::stoll(arg));
+                                        return str_to_int64(arg.c_str(), arg.size());
                                   else
                                       throw std::invalid_argument("Invalid argument type"); },
                               value_);
@@ -168,7 +233,7 @@ public:
                                   else if constexpr (std::is_same_v<T, double>)
                                       return arg;
                                   else if constexpr (std::is_same_v<T, std::string>)
-                                      return std::stod(arg);
+                                        return str_to_f64(arg.c_str(), arg.size());
                                   else
                                       throw std::invalid_argument("Invalid argument type"); },
                               value_);
@@ -177,19 +242,32 @@ public:
         {
             return std::visit([](auto &&arg) -> std::string
                               {
-                                  using T = std::decay_t<decltype(arg)>;
-                                  if constexpr (std::is_same_v<T, uint64_t>)
-                                      return std::to_string(arg);
-                                  else if constexpr (std::is_same_v<T, int64_t>)
-                                      return std::to_string(arg);
-                                  else if constexpr (std::is_same_v<T, double>)
-                                      return f64_to_str(arg);
-                                  else if constexpr (std::is_same_v<T, std::string>)
-                                      return arg;
-                                  else
-                                      throw std::invalid_argument("Invalid argument type"); },
+                std::array<char, 32> buffer;
+                using T = std::decay_t<decltype(arg)>;
+                if constexpr (std::is_same_v<T, uint64_t>) 
+                {
+                    auto len = uint64_to_str(arg, buffer.data(), buffer.size());
+                    return std::string(buffer.data(), len);
+                } else if constexpr (std::is_same_v<T, int64_t>) 
+                {
+                    auto len = int64_to_str(arg, buffer.data(), buffer.size());
+                    return std::string(buffer.data(), len);
+                } else if constexpr (std::is_same_v<T, double>) 
+                {
+                    auto len = f64_to_str(arg, buffer.data(), buffer.size());
+                    return std::string(buffer.data(), len);
+                } else if constexpr (std::is_same_v<T, std::string>)
+                                                    return arg; else
+                                                    throw std::invalid_argument("Invalid argument type"); },
                               value_);
         }
+
+        inline num_type type() const
+        {
+            return static_cast<num_type>(value_.index());
+        }
+
+        friend class cc_json;
 
     private:
         std::variant<uint64_t, int64_t, double, std::string> value_;
@@ -209,6 +287,8 @@ public:
         {
             return value_;
         }
+
+        friend class cc_json;
 
     private:
         std::string value_;
@@ -230,6 +310,8 @@ private:
         {
             return value_;
         }
+
+        friend class cc_json;
 
     private:
         std::vector<node> value_;
@@ -263,6 +345,8 @@ private:
             return value_;
         }
 
+        friend class cc_json;
+
     private:
         obj_map_t value_;
     };
@@ -273,6 +357,8 @@ private:
 
         inline const key &get_key() const { return key_; }
         inline const node &get_value() const { return *value_; }
+
+        friend class cc_json;
 
     private:
         key key_;
@@ -551,11 +637,6 @@ public:
         return result;
     }
 
-    inline static cc_json parse(const char *str)
-    {
-        return parse(std::string_view(str));
-    }
-
 private:
     inline static void print_func(std::string &result, const val &data, size_t level, size_t space, bool is_tab, bool enable_enter)
     {
@@ -566,11 +647,33 @@ private:
                    {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, nul>) {
-                result.append("null");
+                result.append("null", 4);
             } else if constexpr (std::is_same_v<T, bol>) {
-                result.append(arg.get_value() ? "true" : "false");
-            } else if constexpr (std::is_same_v<T, num>) {
-                result.append(arg.get_string());
+                if (arg.value_)
+                    result.append("true", 4);
+                else
+                    result.append("false", 5);
+           } else if constexpr (std::is_same_v<T, num>) {
+                std::visit([&](auto &&v)
+                {
+                    using V = std::decay_t<decltype(v)>;
+                    std::array<char, 32> buffer;
+                    if constexpr (std::is_same_v<V, uint64_t>) {
+                        auto len = uint64_to_str(v, buffer.data(), buffer.size());
+                        result.append(buffer.data(), len);
+                    } else if constexpr (std::is_same_v<V, int64_t>) { 
+                        auto len = int64_to_str(v, buffer.data(), buffer.size());
+                        result.append(buffer.data(), len);
+                    }
+                    else if constexpr (std::is_same_v<V, double>) {
+                        auto len = f64_to_str(v, buffer.data(), buffer.size());
+                        result.append(buffer.data(), len);
+                    } else if constexpr (std::is_same_v<V, std::string>) {
+                        result.append(v);
+                    } else {
+                        throw std::invalid_argument("Invalid number type");
+                    }
+                }, arg.value_);
             } else if constexpr (std::is_same_v<T, str>) {
                 result.push_back('"');
                 result.append(arg.get_string_ref());
@@ -611,7 +714,9 @@ private:
                     if (space > 0) result.append((level + 1) * space, ' ');
                     result.push_back('"');
                     result.append(it->first);
-                    result.append("\" : ");
+                    result.append("\":");
+                    if (space > 0)
+                        result.push_back(' ');
                     print_func(result, it->second.data_, level + 1, space, false,enable_enter);
                     
                     if (++it != obj.end()) {
@@ -929,7 +1034,6 @@ private:
         }
 
         std::string num_str = std::string(str.substr(start, pos - start));
-
         try
         {
             // 判断是否为整数或浮点数
@@ -938,18 +1042,36 @@ private:
                 num_str.find('E') != std::string::npos)
             {
                 // 浮点数
-                data = num(str_to_f64(num_str));
+                data = num(
+#if CC_JSON_ENABLE_HIGH_NUM
+                    str_to_f64_high(num_str.c_str(), num_str.size())
+#else
+                    str_to_f64(num_str.c_str(), num_str.size())
+#endif
+                );
             }
             else
             {
                 // 整数
                 if (num_str[0] == '-' or (num_str.length() > 1 and num_str[0] == '+' and num_str[1] == '-'))
                 {
-                    data = num(std::stoll(num_str));
+                    data = num(
+#if CC_JSON_ENABLE_HIGH_NUM
+                        str_to_int64_high(num_str.c_str(), num_str.size())
+#else
+                        str_to_int64(num_str.c_str(), num_str.size())
+#endif
+                    );
                 }
                 else
                 {
-                    data = num(std::stoull(num_str));
+                    data = num(
+#if CC_JSON_ENABLE_HIGH_NUM
+                        str_to_uint64_high(num_str.c_str(), num_str.size())
+#else
+                        str_to_uint64(num_str.c_str(), num_str.size())
+#endif
+                    );
                 }
             }
         }
@@ -960,6 +1082,7 @@ private:
         }
         return pos - start;
     }
+
     inline static size_t parse_boolean(val &data, const std::string_view &str, size_t pos)
     {
         if (str.substr(pos, 4) == "true")
