@@ -1,0 +1,81 @@
+{
+  "description": "Comprehensive JSON test string covering various data types, lengths and edge cases",
+  "metadata": {
+    "version": 1.0,
+    "author": "JSON Tester",
+    "created": "2023-11-15T12:34:56.789Z",
+    "tags": ["test", "json", "validation", "edge cases"]
+  },
+  "basicTypes": {
+    "nullValue": null,
+    "booleanValues": [true, false],
+    "integerNumbers": [0, 1, -1, 42, 2147483647, -2147483648, 9007199254740991, -9007199254740991],
+    "floatingNumbers": [0.0, 3.141592653589793, -123.456, 1.0e+30, 2.3e-5, 1.7976931348623157e+308],
+    "strings": [
+      "",
+      " ",
+      "Hello, World!",
+      "Unicode: 中文, Español, Русский, 日本語, العربية",
+      "Escapes: \\\" \\\\ \\/ \\b \\f \\n \\r \\t",
+      "Emoji: 😊👍🚀",
+      "Special chars: ~!@#$%^&*()_+-=[]{}|;:',./<>?"
+    ]
+  },
+  "edgeCases": {
+    "empty": {},
+    "emptyArray": [],
+    "whitespace": "   \t\n\r",
+    "unicodeBoundary": "\uD83D\uDE00",
+    "maxPrecision": 0.1234567890123456789012345678901234567890,
+    "largeNumbers": [1e100, 1e-100, 1e+308, 1e-324],
+    "longString": "This is a very long string that exceeds typical short string optimizations. It contains multiple sentences and various punctuation marks to test string handling capabilities. The quick brown fox jumps over the lazy dog. 1234567890. ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz."
+  },
+  "complexStructures": {
+    "nestedObjects": {
+      "level1": {
+        "level2": {
+          "level3": {
+            "value": "Deep nesting test"
+          }
+        }
+      }
+    },
+    "mixedArrays": [
+      null,
+      true,
+      42,
+      3.14,
+      "mixed types",
+      {
+        "objectInArray": true
+      },
+      [
+        "nested array",
+        123
+      ]
+    ],
+    "circularReferences": {
+      "note": "Actual circular references aren't possible in JSON, this is just a placeholder"
+    }
+  },
+  "specialCases": {
+    "dateTime": "2023-11-15T12:34:56.789Z",
+    "base64": "VGhpcyBpcyBhIHRlc3Q=",
+    "url": "https://example.com/path?query=string&param=value#fragment",
+    "xmlLike": "<note><to>User</to><from>System</from><body>Test</body></note>",
+    "sqlInjection": "SELECT * FROM users WHERE username = 'admin' OR 1=1--",
+    "xssAttempt": "<script>alert('XSS')</script>"
+  },
+  "lengthTests": {
+    "short": "x",
+    "medium": "This is a medium length string of about 100 characters. It's designed to test typical string handling without being excessively long.",
+    "long": "This is an extremely long string that exceeds 256 characters. It's designed to test how JSON parsers handle strings that are longer than typical short string optimizations or buffer sizes. The string contains a variety of characters including letters, numbers, punctuation, and whitespace to thoroughly test string handling capabilities. It also includes some Unicode characters like 中文 and emoji 😊 to ensure proper encoding handling. The length of this string is intentionally very long to stress test parsers and validators."
+  },
+  "precisionTests": {
+    "highPrecisionFloat": 0.1234567890123456789012345678901234567890,
+    "smallNumber": 0.000000000000000000000000000000000000000123456789,
+    "largeNumber": 1234567890123456789012345678901234567890.0,
+    "bigNumber": -1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890,
+    "exponentForms": [1e-10, 1.23e+20, 1.0000000000000001, 1.7976931348623157e+308]
+  }
+}
